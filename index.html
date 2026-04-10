@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threads仕分けツール🌱</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#FFF8F3;font-family:'Hiragino Kaku Gothic Pro',sans-serif;padding:20px;min-height:100vh}
+h1{text-align:center;font-size:18px;color:#3D3D3D;margin-bottom:4px}
+.sub{text-align:center;font-size:12px;color:#999;margin-bottom:24px}
+.drop{border:2px dashed #F0E6DF;border-radius:20px;background:#fff;padding:40px 20px;text-align:center;cursor:pointer;margin-bottom:16px}
+.drop.over{border-color:#FF8FAB;background:#FFF0F4}
+.drop-icon{font-size:36px;margin-bottom:8px}
+.drop p{font-size:14px;color:#3D3D3D;font-weight:600}
+.drop small{font-size:12px;color:#999}
+.previews{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.previews img{width:56px;height:72px;object-fit:cover;border-radius:8px;border:2px solid #F0E6DF}
+.btn{width:100%;padding:14px;border:none;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px}
+.btn-main{background:#FF8FAB;color:#fff}
+.btn-main:disabled{background:#ddd;cursor:not-allowed}
+.btn-csv{background:#7EC8C8;color:#fff}
+.btn-reset{background:#fff;color:#3D3D3D;border:2px solid #F0E6DF}
+.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.sum-card{border-radius:14px;padding:12px;text-align:center}
+.sum-card .emoji{font-size:20px}
+.sum-card .num{font-size:22px;font-weight:700}
+.sum-card .label{font-size:11px;color:#999}
+.section-title{font-size:14px;font-weight:700;color:#3D3D3D;margin-bottom:8px}
+.result-card{border-radius:12px;padding:12px;display:flex;gap:10px;margin-bottom:8px;align-items:flex-start}
+.result-card img{width:44px;height:58px;object-fit:cover;border-radius:6px;flex-shrink:0}
+.result-info .account{font-size:13px;font-weight:600;color:#3D3D3D}
+.result-info .memo{font-size:13px;color:#3D3D3D;margin-top:2px}
+.result-info .eng{font-size:12px;color:#999;margin-top:2px}
+.progress{text-align:center;padding:20px;color:#999;font-size:14px}
+</style>
+</head>
+<body>
+<div style="text-align:center;font-size:28px;margin-bottom:4px">🌱</div>
+<h1>Threads スクショ仕分けツール</h1>
+<p class="sub">by SproutUp みわ先生専用</p>
+
+<div id="uploadView">
+  <div class="drop" id="dropZone">
+    <div class="drop-icon">📱</div>
+    <p>スクショをここにドロップ</p>
+    <small>またはタップして選択</small>
+    <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+  </div>
+  <div class="previews" id="previews"></div>
+  <button class="btn btn-main" id="startBtn" disabled onclick="startClassify()">✨ AIで仕分けスタート！</button>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+    <div style="background:#E8F8F8;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span>📊</span><span style="font-size:13px">インサイト（数字データ）</span></div>
+    <div style="background:#FFF0F4;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span>💡</span><span style="font-size:13px">ネタ（構成がいい）</span></div>
+    <div style="background:#FFFBF0;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span>🌸</span><span style="font-size:13px">ネタ（テーマがいい）</span></div>
+    <div style="background:#F5F5F5;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px"><span>🗑️</span><span style="font-size:13px">コメ活（削除OK）</span></div>
+  </div>
+</div>
+
+<div id="progressView" style="display:none">
+  <div class="progress" id="progressText">分析中...</div>
+</div>
+
+<div id="resultsView" style="display:none">
+  <div class="summary" id="summary"></div>
+  <div id="resultsList"></div>
+  <button class="btn btn-csv" onclick="exportCSV()">📥 CSVダウンロード</button>
+  <button class="btn btn-reset" onclick="resetAll()">🔄 もう一度仕分けする</button>
+</div>
+
+<script>
+const APIKEY = 'YOUR_API_KEY_HERE';
+const cats = {
+  insight:{label:'📊 インサイト',bg:'#E8F8F8',color:'#7EC8C8'},
+  neta_kosei:{label:'💡 ネタ（構成）',bg:'#FFF0F4',color:'#FF8FAB'},
+  neta_theme:{label:'🌸 ネタ（テーマ）',bg:'#FFFBF0',color:'#FFD166'},
+  kome:{label:'🗑️ コメ活',bg:'#F5F5F5',color:'#CCC'}
+};
+let images=[], results=[];
+
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+const previews=document.getElementById('previews');
+const startBtn=document.getElementById('startBtn');
+
+dropZone.onclick=()=>fileInput.click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.classList.add('over')};
+dropZone.ondragleave=()=>dropZone.classList.remove('over');
+dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('over');handleFiles(e.dataTransfer.files)};
+fileInput.onchange=e=>handleFiles(e.target.files);
+
+function handleFiles(files){
+  Array.from(files).filter(f=>f.type.startsWith('image/')).forEach(f=>{
+    images.push({file:f,url:URL.createObjectURL(f)});
+    const img=document.createElement('img');
+    img.src=images[images.length-1].url;
+    previews.appendChild(img);
+  });
+  startBtn.disabled=images.length===0;
+}
+
+function toBase64(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(r.result.split(',')[1]);
+    r.onerror=rej;
+    r.readAsDataURL(file);
+  });
+}
+
+async function startClassify(){
+  document.getElementById('uploadView').style.display='none';
+  document.getElementById('progressView').style.display='block';
+  results=[];
+  for(let i=0;i<images.length;i++){
+    document.getElementById('progressText').textContent=`分析中... ${i+1}/${images.length}枚`;
+    try{
+      const b64=await toBase64(images[i].file);
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':APIKEY,'anthropic-version':'2023-06-01'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',max_tokens:500,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:images[i].file.type,data:b64}},
+            {type:'text',text:'このThreadsスクショを分類してください。カテゴリ：insight（自分のインサイト数字画面）、neta_kosei（他者投稿で構成が参考になるもの）、neta_theme（他者投稿でテーマ・エピソードが参考になるもの）、kome（コメント欄・コメ活画面）。JSONのみ返答：{"category":"...","account":"...","memo":"20文字以内","engagement":"いいね数など"}'}
+          ]}]
+        })
+      });
+      const data=await res.json();
+      const text=data.content?.map(c=>c.text||'').join('')||'{}';
+      const parsed=JSON.parse(text.replace(/```json|```/g,'').trim());
+      results.push({...parsed,url:images[i].url,index:i+1});
+    }catch(e){
+      results.push({category:'kome',account:'エラー',memo:'読み取り失敗',engagement:'',url:images[i].url,index:i+1});
+    }
+  }
+  showResults();
+}
+
+function showResults(){
+  document.getElementById('progressView').style.display='none';
+  document.getElementById('resultsView').style.display='block';
+  const grouped={};
+  Object.keys(cats).forEach(k=>grouped[k]=results.filter(r=>r.category===k));
+  document.getElementById('summary').innerHTML=Object.entries(cats).map(([k,c])=>
+    `<div class="sum-card" style="background:${c.bg}"><div class="emoji">${c.label.split(' ')[0]}</div><div class="num" style="color:${c.color}">${grouped[k].length}</div><div class="label">${c.label.split(' ').slice(1).join(' ')}</div></div>`
+  ).join('');
+  const list=document.getElementById('resultsList');
+  list.innerHTML='';
+  ['insight','neta_kosei','neta_theme'].forEach(k=>{
+    if(grouped[k].length===0)return;
+    const sec=document.createElement('div');
+    sec.style.marginBottom='20px';
+    sec.innerHTML=`<p class="section-title">${cats[k].label}</p>`;
+    grouped[k].forEach(r=>{
+      const card=document.createElement('div');
+      card.className='result-card';
+      card.style.background=cats[k].bg;
+      card.innerHTML=`<img src="${r.url}"><div class="result-info"><div class="account">@${r.account||'不明'}</div><div class="memo">${r.memo||''}</div>${r.engagement?`<div class="eng">❤️ ${r.engagement}</div>`:''}</div>`;
+      sec.appendChild(card);
+    });
+    list.appendChild(sec);
+  });
+}
+
+function exportCSV(){
+  const header='No,カテゴリ,アカウント,内容メモ,エンゲージメント\n';
+  const rows=results.map(r=>`${r.index},${cats[r.category]?.label||r.category},${r.account||''},${r.memo||''},${r.engagement||''}`).join('\n');
+  const blob=new Blob(['\uFEFF'+header+rows],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='threads_sorted.csv';
+  a.click();
+}
+
+function resetAll(){
+  images=[];results=[];
+  document.getElementById('previews').innerHTML='';
+  document.getElementById('uploadView').style.display='block';
+  document.getElementById('resultsView').style.display='none';
+  startBtn.disabled=true;
+}
+</script>
+</body>
+</html>
