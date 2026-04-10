@@ -116,7 +116,7 @@ async function startClassify(){
     document.getElementById('progressText').textContent=`分析中... ${i+1}/${images.length}枚`;
     try{
       const b64=await toBase64(images[i].file);
-      const res=await fetch('https:///api/classify',{
+      const res=await fetch('/api/classify',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':APIKEY,'anthropic-version':'2023-06-01'},
         body:JSON.stringify({
